@@ -23,15 +23,15 @@ ITEM.functions.Deploy = {
 			end
 		end)
 
-        local phone = ents.Create("landline_phone")
-        local tr = client:GetEyeTrace()
-        local dist = client:EyePos():Distance(tr.HitPos)
+		local phone = ents.Create("landline_phone")
+		local tr = client:GetEyeTrace()
+		local dist = client:EyePos():Distance(tr.HitPos)
 
-        phone:SetPos(client:EyePos() + (tr.Normal * math.Clamp(dist, 0, 75)))
-        phone:Spawn()
+		phone:SetPos(client:EyePos() + (tr.Normal * math.Clamp(dist, 0, 75)))
+		phone:Spawn()
 
 		--ix.saveEnts:SaveEntity(phone)
 
-        return true
-    end
+		return true
+	end
 }
