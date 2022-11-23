@@ -9,7 +9,7 @@ ix.phone.switch.connections = ix.phone.switch.connections or {}
 ix.phone.switch.endpoints = ix.phone.switch.endpoints or {}
 
 function ix.phone.switch.endpoints:exists(id)
-    return IsValid(self[id])
+    return self[id] != nil
 end
 
 function ix.phone.switch.endpoints:entExists(entIdx)
@@ -52,7 +52,7 @@ function ix.phone.switch.endpoints:GetEndpoint(id)
 end
 
 function ix.phone.switch.endpoints:AddListener(id, client)
-    if (!IsValid(self[id].listeners)) then
+    if (!istable(self[id].listeners)) then
         self[id].listeners = {}
     end
 
@@ -60,7 +60,7 @@ function ix.phone.switch.endpoints:AddListener(id, client)
 end
 
 function ix.phone.switch.endpoints:RmListener(id, client)
-    if (!IsValid(self[id].listeners)) then
+    if (!istable(self[id].listeners)) then
         return
     end
 
@@ -106,15 +106,15 @@ function ix.phone.switch:RmExchange(exID)
 end
 
 function ix.phone.switch:ExchangeExists(exID)
-    return IsValid(self.exchanges[exID])
+    return self.exchanges[exID] != nil
 end
 
 function ix.phone.switch:DestExists(exID, extNum)
-    if (!self:ExchangeExists(exID)) then
+    if (self.exchanges[exID] != nil) then
+        return self.exchanges[exID][extNum] != nil
+    else
         return false
     end
-
-    return IsValid(self.exchanges[exID][extNum])
 end
 
 function ix.phone.switch:AddDest(exID, extNum, extName, endID)
@@ -123,19 +123,19 @@ function ix.phone.switch:AddDest(exID, extNum, extName, endID)
         return false
     end
 
-    self.exchanges[extID][extNum] = {}
-    self.exchanges[extID][extNum]["name"] = extName
-    self.exchanges[extID][extNum]["endID"] = endID
+    self.exchanges[exID][extNum] = {}
+    self.exchanges[exID][extNum]["name"] = extName
+    self.exchanges[exID][extNum]["endID"] = endID
     
     return true
 end
 
 function ix.phone.switch:GetDest(exID, extNum)
-    if (self:DestExists(exID, extNum)) then
+    if (!self:DestExists(exID, extNum)) then
         return false
     end
 
-    return self.exchanges[extID][extNum]
+    return self.exchanges[exID][extNum]
 end
 
 function ix.phone.switch:RmDest(exID, extNum)
@@ -144,7 +144,7 @@ function ix.phone.switch:RmDest(exID, extNum)
         return false
     end
 
-    self.exchanges[extID][extNum] = nil
+    self.exchanges[exID][extNum] = nil
 
     return true
 end
@@ -154,7 +154,7 @@ function ix.phone.switch:ConnectionValid(connID)
         return false
     end
 
-    return IsValid(self.connections[connID])
+    return istable(self.connections[connID])
 end
 
 function ix.phone.switch:buildNewConnectionNode(connID, extID, extNum)
@@ -192,7 +192,7 @@ function ix.phone.switch:buildNewConnection()
 end
 
 function ix.phone.switch:Disconnect(connID)
-    if (!IsValid(self.connections[connID])) then
+    if (!istable(self.connections[connID])) then
         return
     end
 
@@ -220,7 +220,7 @@ function ix.phone.switch:GetSourceRecievers(extID, extNum)
     local sourceNodeID = nil
 
     local conn = self:GetActiveConnection(extID, extNum)
-    if (!IsValid(conn)) then
+    if (!istable(conn)) then
         return
     end
 
@@ -261,7 +261,7 @@ function ix.phone.switch:decodeSeq(dialSeq)
     end
 
     -- the remaining digits should be the extension
-    local ext = tonumber(string.sub(dialSeq, 1, 4))
+    local ext = tonumber(string.sub(dialSeq, 2, 4))
     if (ext == nil or ext < 1) then
         return nil
     end
@@ -278,10 +278,10 @@ function ix.phone.switch:Dial(sourceExchange, sourceExt, sourceCallback, dialSeq
     end
 
     local decodedDest = self:decodeSeq(dialSeq)
-    if (!IsValid(decodedDest)) then
+    if (!istable(decodedDest)) then
         return -- cannot decode the dial sequence provided
     end
-    
+
     if (decodedDest["exchange"] == nil) then
         decodedDest["exchange"] = sourceExchange
     end
@@ -290,13 +290,14 @@ function ix.phone.switch:Dial(sourceExchange, sourceExt, sourceCallback, dialSeq
         return -- destination does not exist or is not valid
     end
     local connID = self:buildNewConnection()
-    
+
     self:buildNewConnectionNode(connID, sourceExchange, sourceExt)
     self:buildNewConnectionNode(connID, decodedDest["exchange"], decodedDest["extension"])
 
     -- 'dial' the endpoint entity
     local destination = self:GetDest(decodedDest["exchange"], decodedDest["extension"])
-    if (!IsValid(destination)) then
+
+    if (!istable(destination)) then
         self:Disconnect(connID) -- destination dissapeared for some reason
         return
     end
@@ -310,7 +311,7 @@ function ix.phone.switch:Dial(sourceExchange, sourceExt, sourceCallback, dialSeq
         pcall(self.ringCallback, status) -- send the status back to the source
     end)
 
-    self.endpoints:Dial(destEndID, _callback)
+    self.endpoints:GetEndpoint(tonumber(destEndID)):EnterRing(_callback)
 end
 
 -- returns back a list of player entities that are listening to the phone that (character) is speaking into
@@ -319,24 +320,28 @@ function ix.phone.switch:GetCharacterActiveListeners(character)
         return
     end
 
-    if (!character.vars.landlineConnection["active"]) then
+    local connMD = character.GetLandlineConnection()
+    if (!connMD) then
         return
     end
     
-    local recievers = ix.phone.switch:GetSourceRecievers(
-        character.vars.landlineConnection["exchange"],
-        character.vars.landlineConnection["extension"]
-    )
+    -- if there is a connection active then we need to go through the connection tree
+    -- and get all of the connected nodes to said connection
+    local recievers = self:GetSourceRecievers(connMD["exchange"], connMD["extension"])
 
-    if (!IsValid(recievers) or #recievers < 1) then
+    if (!istable(recievers) or #recievers < 1) then
         return
     end
 
+    -- NOTE: Usually these will both be a for loop of 1
+
+    -- for each node we need to get the list of active listeners from the ent and collect them
+    -- into one list for the caller
     local listeners = {}
     for k, recv in ipairs(recievers) do
         -- there will almost always be one reciever.. but treating this as a list in case we ever do 'conference calls'
-        local _listeners = ix.phone.switch.endpoints:GetListeners(recv["endID"])
-        if (IsValid(_listeners)) then
+        local _listeners = self.endpoints:GetListeners(recv["endID"])
+        if (istable(_listeners)) then
             for _, listener in ipairs(listeners) do
                 listeners[#listeners] = listener
             end
@@ -361,8 +366,8 @@ function ix.phone.switch:DisconnectActiveCallIfPresentOnClient(client)
         return
     end
 
-    local vars = character:GetVar("landlineConnection")
-    if (!vars["active"]) then
+    local connMD = character:GetLandlineConnection()
+    if (!istable(connMD) and !connMD["active"]) then
         -- probably ran hangup on a phone someone else was speaking on
         -- we should allow this in the future (maybe?) but for now we exit
         client:NotifyLocalized("You are not speaking on the phone.")
@@ -370,15 +375,15 @@ function ix.phone.switch:DisconnectActiveCallIfPresentOnClient(client)
     end
 
     -- terminate any existing connections here 
-    local conn = self:GetActiveConnection(vars["exchange"], vars["extension"])
-    if (!IsValid(conn)) then
+    local conn = self:GetActiveConnection(connMD["exchange"], connMD["extension"])
+    if (!istable(conn)) then
         client:NotifyLocalized("Error: AttemptedHangupOnActivePhoneNoConn")
         -- This shouldn't be possible but if it happens then there is some lingering issue with
         -- this character's var being active when they are not in an active connection and
         -- the target entity being in use.
         -- This is an edge case and might happen if the connections table is reloaded or if something
         -- weird happens with the character's vars.
-        character:SetVar("landlineConnection", false)
+        character:SetLandlineConnection("landlineConnection", false)
         return
     end
     
@@ -390,9 +395,32 @@ function ix.phone.switch:DisconnectActiveCallIfPresentOnClient(client)
     for _, recv in ipairs(recievers) do
         local _char = recv:GetCharacter()
         if (IsValid(_char)) then
-            _char:SetVar("landlineConnection", false)
+            _char:SetLandlineConnection("landlineConnection", false)
         end
     end
 
     self:Disconnect(conn["targetConnID"])
+end
+
+-- returns whether or not the 'listener' is in an active phone call with 'speaker'
+function ix.phone.switch:ListenerCanHearSpeaker(speaker, listener)
+    local speakerChar = speaker:GetCharacter()
+    local listeners = self:GetCharacterActiveListeners(speakerChar)
+    if (!IsValid(listeners)) then
+        -- doubly make sure that the call activity is set correctly on the caller
+        speakerChar:SetLandlineConnection({
+            active = false,
+            exchange = nil,
+            extension = nil
+        })
+        return false
+    end
+
+    for _, _listener in ipairs(listeners) do
+        if (_listener == listener) then
+            return true
+        end
+    end
+
+    return false
 end
