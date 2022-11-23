@@ -1,12 +1,15 @@
 local PLUGIN = PLUGIN
-PLUGIN.landlineID = 1
+PLUGIN.targetedLandlineEndpointID = nil
+PLUGIN.targetedLandlinePBX = nil
+PLUGIN.targetedLandlineExt = nil
+PLUGIN.targetedLandlineName = nil
 
-function PLUGIN:setCurrentLandlineID(serverEntID)
-	self.landlineID = serverEntID
-end
+net.Receive("EnterLandlineDial", function()
+	PLUGIN.targetedLandlineEndpointID = net.ReadInt(15)
+	PLUGIN.targetedLandlinePBX = net.ReadInt(5)
+	PLUGIN.targetedLandlineExt = net.ReadInt(11)
+	PLUGIN.targetedLandlineName = net.ReadString()
 
-netstream.Hook("EnterLandlineDial", function(serverEntID)
 	vgui.Create("ixLandlineDial")
-	PLUGIN:setCurrentLandlineID(serverEntID)
 end)
 
