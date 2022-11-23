@@ -68,7 +68,12 @@ function PANEL:Init()
 	self.dial:SetColor(Color(0, 255, 0))
 	self.dial:SetHeight(50)
 	self.dial.DoClick = function()
-		-- TODO: Actually start the dialing process here
+		net.Start("BeginDialToPeer")
+			net.WriteString(dialSeq:asStr())
+			net.WriteInt(PLUGIN.targetedLandlinePBX, 5)
+			net.WriteInt(PLUGIN.targetedLandlineExt, 11)
+		net.SendToServer()
+
 		self:Close()
 	end
 
