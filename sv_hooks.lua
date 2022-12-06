@@ -1,5 +1,10 @@
+local PLUGIN = PLUGIN
+
 util.AddNetworkString("BeginDialToPeer")
 util.AddNetworkString("ixConnectedCallStatusChange")
+util.AddNetworkString("RunHangupLandline")
+util.AddNetworkString("RunGetPeerName")
+util.AddNetworkString("OnGetPeerName")
 
 net.Receive("BeginDialToPeer", function (len, client)
     local dialSeq = net.ReadString()
@@ -26,11 +31,69 @@ net.Receive("BeginDialToPeer", function (len, client)
     end, dialSeq)
 end)
 
--- PHONE CLEANUP
-local function cleanupActivePhoneConnectionsForClient(client)
+net.Receive("RunHangupLandline", function (len, client)
+    PLUGIN:runHangupOnClient(client)
+end)
+
+net.Receive("RunGetPeerName", function (len, client)
+    if (!client or !IsValid(client)) then
+        return
+    end
+
     local char = client:GetCharacter()
-    if (char:GetLandlineConnection()["active"]) then
-        ix.phone.switch:DisconnectActiveCallIfPresentOnClient(char)
+    local charMD = char:GetLandlineConnection()
+
+    if (charMD.active) then
+        if (!charMD.extension or !charMD.exchange) then
+            return
+        end
+
+        listeners = ix.phone.switch:GetListeners(charMD.exchange, charMD.extension) 
+        if (!listeners or #listeners < 1) then
+            return
+        end
+
+        net.Start("OnGetPeerName")
+            net.WriteString(listeners[0]["name"])
+        net.Send(client)
+    end
+end)
+
+function PLUGIN:runHangupOnClient(client)
+    if (!client or !IsValid(client)) then
+        return
+    end
+    local data = {}
+        data.start = client:GetShootPos()
+        data.endpos = data.start + client:GetAimVector() * 96
+        data.filter = client
+    local target = util.TraceLine(data).Entity
+
+    if (!IsValid(target) or target.PrintName != "Landline Phone") then
+        return
+    end
+
+    local markForCleanup = target:InUse()
+    target:HangUp()
+    if (markForCleanup) then
+        client:GetCharacter():SetLandlineConnection({
+            active = false,
+            exchange = target.currentPBX,
+            extension = target.currentExtension
+        })
+        ix.phone.switch:DisconnectActiveCallIfPresentOnClient(client)
+    end
+end
+-- PHONE CLEANUP
+-- this function literally just dumps all current ongoing connections that happen to have this client in them
+local function cleanupActivePhoneConnectionsForClient(client)
+    if (!client or !IsValid(client)) then
+        return
+    end
+
+    local char = client:GetCharacter()
+    if (client:GetCharacter():GetLandlineConnection()["active"]) then
+        ix.phone.switch:DisconnectActiveCallIfPresentOnClient(client)
     end
 
     char:SetLandlineConnection({
@@ -40,6 +103,7 @@ local function cleanupActivePhoneConnectionsForClient(client)
     })
 end
 
+-- peak laziness:
 function PLUGIN:PlayerDisconnected(client)
     cleanupActivePhoneConnectionsForClient(client)
 end
