@@ -13,3 +13,23 @@ net.Receive("EnterLandlineDial", function()
 	vgui.Create("ixLandlineDial")
 end)
 
+net.Receive("ixConnectedCallStatusChange", function()
+	local active = net.ReadBool()
+	if (active) then
+		PLUGIN.offHook = true
+		PLUGIN.otherSideRinging = false
+		
+		net.Start("RunGetPeerName")
+		net.SendToServer()
+		return 
+	end
+	
+	PLUGIN.otherSideRinging    = false
+	PLUGIN.otherSideActive     = false
+	PLUGIN.currentCallStatus   = "DISCONNECTED"
+	PLUGIN.currentCallPeerName = "Unknown"
+end)
+
+net.Receive("OnGetPeerName", function()
+	PLUGIN.currentCallPeerName = net.ReadString()
+end)
