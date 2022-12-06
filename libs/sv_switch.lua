@@ -1,244 +1,7 @@
--- this is a loose implementation of a virtual private business exchange (vPBX) and a switch
+-- this is a loose implementation of a virtual private business exchange (vPBX)
 ix.phone = ix.phone or {}
 ix.phone.switch = ix.phone.switch or {}
- -- a table used for managing pbxs and their members
-ix.phone.switch.exchanges = ix.phone.switch.exchanges or {}
- -- a table used for switching
-ix.phone.switch.connections = ix.phone.switch.connections or {}
--- a flat list of all the entities. each entity has an associated 'listeners' table which contains all of the players actively connected to that entity
-ix.phone.switch.endpoints = ix.phone.switch.endpoints or {}
 
-function ix.phone.switch.endpoints:exists(id)
-    return self[id] != nil
-end
-
-function ix.phone.switch.endpoints:entExists(entIdx)
-    for id, ent in ipairs(self) do
-        if (entIdx == ent:EntIndex()) then
-            return id
-        end
-    end
-    return nil
-end
-
-function ix.phone.switch.endpoints:Register(ent)
-    -- assigns an ID. if the ent already exists then it will return the existing id
-    -- we need to have our own ID here rather than the index because the entity index might change but
-    -- in that case the id shouldn't
-
-    local entExists = self:entExists(ent:EntIndex())
-    if (entExists != nil) then
-        return entExists
-    end
-
-    local newID = math.random(1000, 9999)
-    if (self:exists(newID)) then
-        return nil
-    end
-    
-    self[newID] = ent
-    return newID
-end
-
-function ix.phone.switch.endpoints:DeRegister(id)
-    self[id] = nil
-end
-
-function ix.phone.switch.endpoints:GetEndpoint(id)
-    -- returns the associated entity table
-    if (self:exists(id)) then
-        return self[id]
-    end
-end
-
-function ix.phone.switch.endpoints:AddListener(id, client)
-    if (!istable(self[id].listeners)) then
-        self[id].listeners = {}
-    end
-
-    self[id].listeners[#self[id].listeners] = client
-end
-
-function ix.phone.switch.endpoints:RmListener(id, client)
-    if (!istable(self[id].listeners)) then
-        return
-    end
-
-    for k, listener in ipairs(self[id].listeners) do
-        if (listener == client) then
-            self[id].listeners[k] = nil
-        end
-    end
-end
-
-function ix.phone.switch.endpoints:GetListeners(id)
-    return self[id].listeners
-end
-
-function ix.phone.switch.endpoints:RingEndpoint(id, callback)
-    -- rings and endpoint and, if the phone is picked up, it will call callback as true. otherwise false
-    -- if the destination is unavailable or busy then it will return nil
-    local ent = self:GetEndpoint(id)
-
-    if (ent.inUse or ent.isRinging) then
-        return nil
-    end
-
-    ent:EnterRing(callback)
-end
-
-function ix.phone.switch:AddExchange(exID)
-    if (self:ExchangeExists(exID)) then
-        return false
-    end
-
-    self.exchanges[exID] = {}
-    return true
-end
-
-function ix.phone.switch:RmExchange(exID)
-    if (!self:ExchangeExists(exID)) then
-        return false
-    end
-
-    self.exchanges[exID] = nil
-    return true
-end
-
-function ix.phone.switch:ExchangeExists(exID)
-    return self.exchanges[exID] != nil
-end
-
-function ix.phone.switch:DestExists(exID, extNum)
-    if (self.exchanges[exID] != nil) then
-        return self.exchanges[exID][extNum] != nil
-    else
-        return false
-    end
-end
-
-function ix.phone.switch:AddDest(exID, extNum, extName, endID)
-    -- returns false if destination exists or exchange doesn't
-    if (self:DestExists(exID, extNum)) then
-        return false
-    end
-
-    self.exchanges[exID][extNum] = {}
-    self.exchanges[exID][extNum]["name"] = extName
-    self.exchanges[exID][extNum]["endID"] = endID
-    
-    return true
-end
-
-function ix.phone.switch:GetDest(exID, extNum)
-    if (!self:DestExists(exID, extNum)) then
-        return false
-    end
-
-    return self.exchanges[exID][extNum]
-end
-
-function ix.phone.switch:RmDest(exID, extNum)
-    -- returns false if destination does not exist
-    if (!self:DestExists(exID, extNum)) then
-        return false
-    end
-
-    self.exchanges[exID][extNum] = nil
-
-    return true
-end
-
-function ix.phone.switch:ConnectionValid(connID)
-    if (!self.connections[connID]) then
-        return false
-    end
-
-    return istable(self.connections[connID])
-end
-
-function ix.phone.switch:buildNewConnectionNode(connID, extID, extNum)
-    -- helper function to create source requests for connections
-    -- constructs a table that can be used by ix.phone.switch:connect()
-    if (!self:ConnectionValid(connID)) then
-        return
-    end
-
-    if (!self.connections[connID].nodes) then 
-        self.connections[connID].nodes = {}
-    end
-
-    local nodeID = #self.connections[connID].nodes + 1
-    self.connections[connID].nodes[nodeID] = {}
-    self.connections[connID].nodes[nodeID]["exchange"] = extID
-    self.connections[connID].nodes[nodeID]["extension"] = extNum
-end
-
-function ix.phone.switch:buildNewConnection()
-    -- helper function to that creates a new connection
-
-    -- attempt to reuse a freshly terminated connection
-    for id, conn in ipairs(self.connections) do
-        if (conn == false) then
-            return id
-        end
-    end
-
-    -- no terminated connections
-    connectionID = #self.connections + 1
-    self.connections[connectionID] = {}
-
-    return connectionID
-end
-
-function ix.phone.switch:Disconnect(connID)
-    if (!istable(self.connections[connID])) then
-        return
-    end
-
-    self.connections[connID] = false
-end
-
--- returns the active connection in the form of {"targetConnID", "sourceNodeID"} if one is present
-function ix.phone.switch:GetActiveConnection(extID, extNum)
-    for connID, nodes in ipairs(self.connections) do
-        for nodeID, node in ipairs(nodes) do
-            if (node["exchange"] == extID and node["extension"] == extNum) then
-                -- source is present in this connection
-                return {targetConnID = connID, sourceNodeID = nodeID}
-            end
-        end
-    end
-end
-
--- returns the actively connected recievers to a source exchange and extension
--- returns nil if there are no active connections
--- if there are listeners, we will return a list of all listeners as their endpoint ids
-function ix.phone.switch:GetSourceRecievers(extID, extNum)
-    local res = {}
-    local targetConn = nil
-    local sourceNodeID = nil
-
-    local conn = self:GetActiveConnection(extID, extNum)
-    if (!istable(conn)) then
-        return
-    end
-
-    return self:getSourceRecieversFromConnection(conn["targetConnID"], conn["sourceNodeID"])
-end
-
-function ix.phone.switch:getSourceRecieversFromConnection(connID, sourceNodeID)
-    local res = {}
-    for nodeID, node in ipairs(self.connections[connID]) do
-        if (nodeID != sourceNodeID) then
-            -- we want to return this as it exists in the exchange as that will give us 
-            -- extra details the node tree does not contain such as name and endID
-            res[#res + 1] = self:GetDest(node["exchange"], node["extension"])
-        end
-    end
-
-    return res
-end
 
 --                                           (optional)
 -- takes in a dial sequence in the format of (exchange)(extension)
@@ -314,7 +77,7 @@ function ix.phone.switch:Dial(sourceExchange, sourceExt, sourceCallback, dialSeq
     self.endpoints:GetEndpoint(tonumber(destEndID)):EnterRing(_callback)
 end
 
--- returns back a list of player entities that are listening to the phone that (character) is speaking into
+-- returns back a list of player entities that are listening to the phone this character is speaking into
 function ix.phone.switch:GetCharacterActiveListeners(character)
     if (!IsValid(character)) then
         return
@@ -325,30 +88,7 @@ function ix.phone.switch:GetCharacterActiveListeners(character)
         return
     end
     
-    -- if there is a connection active then we need to go through the connection tree
-    -- and get all of the connected nodes to said connection
-    local recievers = self:GetSourceRecievers(connMD["exchange"], connMD["extension"])
-
-    if (!istable(recievers) or #recievers < 1) then
-        return
-    end
-
-    -- NOTE: Usually these will both be a for loop of 1
-
-    -- for each node we need to get the list of active listeners from the ent and collect them
-    -- into one list for the caller
-    local listeners = {}
-    for k, recv in ipairs(recievers) do
-        -- there will almost always be one reciever.. but treating this as a list in case we ever do 'conference calls'
-        local _listeners = self.endpoints:GetListeners(recv["endID"])
-        if (istable(_listeners)) then
-            for _, listener in ipairs(listeners) do
-                listeners[#listeners] = listener
-            end
-        end
-    end
-
-    return listeners
+    return self:GetListeners(connMD["exchange"], connMD["extension"])
 end
 
 function ix.phone.switch:GetPlayerActiveListeners(client)
@@ -360,6 +100,8 @@ function ix.phone.switch:GetPlayerActiveListeners(client)
     return self:GetCharacterActiveListeners(character)
 end
 
+-- rudely hangs up every single active call related to this character
+-- typically used when the player disconnects or switches chars mid call
 function ix.phone.switch:DisconnectActiveCallIfPresentOnClient(client)
     local character = client:GetCharacter()
     if (!IsValid(character)) then
