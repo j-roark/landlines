@@ -8,6 +8,7 @@ ix.phone = ix.phone or {}
 
 ix.util.Include("cl_hooks.lua")
 ix.util.Include("sv_hooks.lua")
+ix.util.Include("sv_plugin.lua")
 
 CAMI.RegisterPrivilege({
 	Name = "Helix - Use Phones",
@@ -20,27 +21,7 @@ ix.command.Add("HangupPhone", {
     arguments = {},
     privilege = "Use Phones",
     OnRun = function(self, client)
-        local data = {}
-            data.start = client:GetShootPos()
-            data.endpos = data.start + client:GetAimVector() * 96
-            data.filter = client
-        local target = util.TraceLine(data).Entity
-
-        if (!IsValid(target) or target.PrintName != "Landline Phone") then
-            client:NotifyLocalized("You are not looking at a phone.")
-            return
-        end
-
-        local markForCleanup = target:InUse()
-        target:HangUp()
-        if (markForCleanup) then
-            client:GetCharacter():SetLandlineConnection({
-                active = false,
-                exchange = target.currentPBX,
-                extension = target.currentExtension
-            })
-            ix.phone.switch:DisconnectActiveCallIfPresentOnClient(client)
-        end
+        PLUGIN:runHangupOnClient(client)
     end
 })
 
@@ -78,20 +59,15 @@ ix.command.Add("EditLandline", {
             return
         end
 
-        if (ix.phone.switch:DestExists(pbx, extension)) then
-            client:NotifyLocalized("Provided extension '"..tostring(extension).."' is already in use for PBX: '"..tostring(pbx).."'.")
-            return
-        end
-
         if (string.len(publicName) < 1) then
             client:NotifyLocalized("Provided public name is invalid! (must have a length greater than 1)")
             return
         end
 
         local data = {}
-        data.start = client:GetShootPos()
-        data.endpos = data.start + client:GetAimVector() * 96
-        data.filter = client
+            data.start = client:GetShootPos()
+            data.endpos = data.start + client:GetAimVector() * 96
+            data.filter = client
         local target = util.TraceLine(data).Entity
 
         if (!IsValid(target) or target.PrintName != "Landline Phone") then
@@ -108,8 +84,8 @@ ix.command.Add("EditLandline", {
             return
         end
 
-        target.currentName = publicName
-        target.currentPBX = pbx
+        target.currentName      = publicName
+        target.currentPBX       = pbx
         target.currentExtension = extension
 
         client:NotifyLocalized("You have successfully updated the landline.")
