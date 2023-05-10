@@ -116,10 +116,12 @@ end
 -- returns the active connection in the form of {"targetConnID", "sourceNodeID"} if one is present
 function ix.phone.switch:GetActiveConnection(extID, extNum)
     for connID, nodes in ipairs(self.connections) do
-        for nodeID, node in ipairs(nodes) do
-            if (node["exchange"] == extID and node["extension"] == extNum) then
-                -- source is present in this connection
-                return {targetConnID = connID, sourceNodeID = nodeID}
+        if (nodes != false) then
+            for nodeID, node in ipairs(nodes) do
+                if (node["exchange"] == extID and node["extension"] == extNum) then
+                    -- source is present in this connection
+                    return {targetConnID = connID, sourceNodeID = nodeID}
+                end
             end
         end
     end
