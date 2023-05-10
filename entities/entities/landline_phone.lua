@@ -10,11 +10,15 @@ ENT.Instructions = ""
 ENT.Spawnable = false
 ENT.AdminOnly = true
 ENT.Holdable = true
-ENT.inUse = false
+ENT.offHook = false
+ENT.inUseBy = nil
 ENT.isRinging = false
-ENT.defaultRingTime = 60 -- how long the phone will ring (in seconds)
+ENT.defaultRingTime = 60  -- how long the phone will ring (in seconds)
 ENT.endpointID = nil
 ENT.ringCallback = nil
+ENT.currentName = "Unknown" -- public name as stored currently in the PBX
+ENT.currentPBX = 0          -- PBX this entity is attached to
+ENT.currentExtension = nil  -- extension in the PBX
 
 function ENT:GetIndicatorPos()
     local btnPos = self:GetPos()
@@ -28,6 +32,7 @@ end
 
 if SERVER then
     util.AddNetworkString("UpdateLandlineEntStatus")
+    util.AddNetworkString("EnterLandlineDial")
 
     function ENT:Initialize()
         self:SetModel("models/props/cs_office/phone.mdl")
@@ -42,8 +47,18 @@ if SERVER then
         end
 
         self.endpointID = ix.phone.switch.endpoints:Register(self)
+        self.currentExtension = math.random(100, 999)
 
-        print("landline registered as: "..tostring(self.endpointID))
+        self:CallOnRemove("OnRemoveLandlineCleanup", function(ent)
+            if (self.currentExtension and self.currentPBX) then
+                return
+            end
+
+            local connID = ix.phone.switch:GetActiveConnection(extID, extNum)
+            if (connID) then
+                ix.phone.switch:Disconnect(connID, true)
+            end
+        end)
     end
 
     function ENT:PerformPickup(client)
@@ -54,24 +69,40 @@ if SERVER then
             self:Remove()
         end)
     end
-
+ 
     function ENT:Use(activator)
-        local curTime = CurTime()
-
-        if (self.nextUse and self.nextUse > curTime) then
+        if (self.nextUse and self.nextUse > CurTime()) then
             return
         end
+        
+        self.nextUse = CurTime() + 1
+
         if activator:KeyDown(IN_WALK) then
             return self:PerformPickup(activator)
         end
 
         if (self.isRinging) then
+            self.inUseBy = activator
             self:pickupDuringRing()
-            self.nextUse = curTime + 1
-            return
-        elseif (!self.inUse) then
-            netstream.Start(activator, "EnterLandlineDial", self.endpointID)
-            self.nextUse = curTime + 1
+        end
+        
+        if (!self.offHook or self.isRinging) then
+            self.inUseBy = activator
+            net.Start("EnterLandlineDial")
+                net.WriteInt(tonumber(self.endpointID), 15)
+                net.WriteInt(tonumber(self.currentPBX), 5)
+                net.WriteInt(tonumber(self.currentExtension), 11)
+                net.WriteString(self.currentName)
+            net.Send(activator)
+            
+            self:SetModel("models/props/cs_office/phone_p1.mdl")
+            self:EmitSound("landline_hangup.wav", 60, 100, 1, CHAN_STATIC)
+            
+            self.inUseBy:GetCharacter():SetLandlineConnection({
+                active = true,
+                exchange = self.currentPBX,
+                extension = self.currentExtension
+            })
         end
 	end
 
@@ -80,6 +111,7 @@ if SERVER then
     end
 
     function ENT:EnterRing(callback)
+        -- this entity getting 'called'
         self:EmitSound("landline_ringtone.wav", 60, 100, 1, CHAN_STATIC)
         self.isRinging = true
         self.ringCallback = callback
@@ -89,7 +121,7 @@ if SERVER then
         timer.Create("PhoneRinging"..self.endpointID, self.defaultRingTime, 1, function ()
             -- phone has rung too long
             self.isRinging = false
-            self.inUse = false
+            self.offHook = false
             self:broadcastStatusOnChange()
 
             local _, _ = pcall(self.ringCallback, false)
@@ -99,21 +131,28 @@ if SERVER then
 
     function ENT:pickupDuringRing()
         self:SetModel("models/props/cs_office/phone_p1.mdl")
-
-        if (!self.isRinging or !timer.Exists("PhoneRinging"..self.endpointID)) then
+        timer.Remove("PhoneRinging"..self.endpointID)
+        
+        if (!self.isRinging) then
             return nil
         end
 
-        timer.Remove("PhoneRinging"..self.endpointID)
+        
         self:StopSound("landline_ringtone.wav")
         self:EmitSound("landline_hangup.wav", 60, 100, 1, CHAN_STATIC)
 
         self.isRinging = false
-        self.inUse = true
+        self.offHook = true
         self:broadcastStatusOnChange()
 
         local _, _ = pcall(self.ringCallback, true)
         self.ringCallback = nil
+
+        self.inUseBy:GetCharacter():SetLandlineConnection({
+            active = true,
+            exchange = currentPBX,
+            extension = currentExtension
+        })
     end
 
     function ENT:hangupDuringRing()
@@ -126,7 +165,7 @@ if SERVER then
         self:EmitSound("landline_hangup.wav", 60, 100, 1, CHAN_STATIC)
 
         self.isRinging = false
-        self.inUse = false
+        self.offHook = false
         self:broadcastStatusOnChange()
 
         local _, _ = pcall(self.ringCallback, false)
@@ -135,14 +174,20 @@ if SERVER then
     function ENT:HangUp()
         self:SetModel("models/props/cs_office/phone.mdl")
 
-        if (!self.isRinging and !self.inUse) then
+        if (!self.isRinging and !self.offHook) then
             self:EmitSound("landline_hangup.wav", 60, 100, 1, CHAN_STATIC)
             return
         end
 
-        if (self.inUse) then
+        if (self.offHook) then
             self:EmitSound("landline_hangup.wav", 60, 100, 1, CHAN_STATIC)
-            self.inUse = false
+            self.inUseBy:GetCharacter():SetLandlineConnection({
+                active = false,
+                exchange = nil,
+                extension = nil
+            })
+            self.offHook = false
+            
             self:broadcastStatusOnChange()
         end
 
@@ -152,17 +197,25 @@ if SERVER then
     end
 
     function ENT:InUse()
-        return self.inUse
+        return self.offHook
     end
 
     function ENT:IsRinging()
         return self.isRinging
     end
 
+    function ENT:updateCurrentCallName(name)
+        net.Send("OnGetPeerName")
+            net.WriteString(name)
+        net.Send(self.inUseBy)
+    end
+
     function ENT:broadcastStatusOnChange()
         net.Start("UpdateLandlineEntStatus")
             net.WriteBool(self.isRinging)
-            net.WriteBool(self.inUse)
+            net.WriteBool(self.offHook)
+            net.WriteInt(self.currentPBX, 11)
+            net.WriteInt(self.currentExtension, 15)
         net.Broadcast()
     end
 else
@@ -170,13 +223,13 @@ else
     local color_green = Color(0, 255, 0, 255)
     local color_red = Color(255, 50, 50, 255)
     local isRinging = false
-    local inUse = false
+    local offHook = false
     local lastFlashTime = CurTime()
     local nextFlashTime = CurTime()
 
     net.Receive("UpdateLandlineEntStatus", function()
         isRinging = net.ReadBool()
-        inUse = net.ReadBool()
+        offHook = net.ReadBool()
         
         -- reset the indicator status flashing
         color_red.a = 255
@@ -203,7 +256,7 @@ else
                 color_red.a = 0
             end
             render.DrawSprite(btnPos, 1, 1, color_red)
-        elseif (inUse) then
+        elseif (offHook) then
 		    render.DrawSprite(btnPos, 1, 1, color_red)
         else
             render.DrawSprite(btnPos, 1, 1, color_green)

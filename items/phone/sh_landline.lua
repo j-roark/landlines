@@ -30,7 +30,7 @@ ITEM.functions.Deploy = {
 		phone:SetPos(client:EyePos() + (tr.Normal * math.Clamp(dist, 0, 75)))
 		phone:Spawn()
 
-		--ix.saveEnts:SaveEntity(phone)
+		ix.saveEnts:SaveEntity(phone)
 
 		return true
 	end
