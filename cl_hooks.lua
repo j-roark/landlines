@@ -17,8 +17,9 @@ net.Receive("ixConnectedCallStatusChange", function()
 	local active = net.ReadBool()
 	if (active) then
 		PLUGIN.offHook = true
-		PLUGIN.otherSideRinging = false
-		
+		PLUGIN.otherSideRinging  = false
+		PLUGIN.currentCallStatus = "CONNECTED"	
+
 		net.Start("RunGetPeerName")
 		net.SendToServer()
 		return 
