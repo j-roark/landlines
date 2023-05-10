@@ -42,17 +42,17 @@ function PANEL:Init()
 		PLUGIN.panel:Remove()
 	end
 
-	self:SetSize(600, 1100)
+	self:SetSize(500, 800)
 	self:Center()
 	self:SetBackgroundBlur(true)
 	self:SetDeleteOnClose(true)
-	self:SetTitle(L(" "))
+	self:SetTitle(" ")
 	self:ShowCloseButton(false)
 	self:IsDraggable(false)
 
 	self.verStamp = self:Add("DLabel")
 	self.verStamp:Dock(TOP)
-	self.verStamp:DockMargin(0, -3, 115, 0)
+	self.verStamp:DockMargin(0, -3, 55, 0)
 	self.verStamp:SetFont("DermaDefaultBold")
 	self.verStamp:SetHeight(30)
 	self.verStamp:SetColor(Color(215, 240, 231))
@@ -76,7 +76,7 @@ function PANEL:Init()
 
 	self.name = self:Add("DLabel")
 	self.name:Dock(TOP)
-	self.name:DockMargin(0, 4, 125, 0)
+	self.name:DockMargin(0, 4, 75, 0)
 	self.name:SetText(L(tostring(PLUGIN.targetedLandlineName)))
 	self.name:SetHeight(35)
 	self.name:SetFont("CloseCaption_Bold")
@@ -85,7 +85,7 @@ function PANEL:Init()
 
 	self.pBX = self:Add("DLabel")
 	self.pBX:Dock(TOP)
-	self.pBX:DockMargin(125, 4, 0, 0)
+	self.pBX:DockMargin(75, 4, 0, 0)
 	self.pBX:SetText(L("PBX   :> ".._curPBX))
 	self.pBX:SetHeight(35)
 	self.pBX:SetFont("CloseCaption_Bold")
@@ -94,7 +94,7 @@ function PANEL:Init()
 
 	self.ext = self:Add("DLabel")
 	self.ext:Dock(TOP)
-	self.ext:DockMargin(125, 4, 0, 0)
+	self.ext:DockMargin(75, 4, 0, 0)
 	self.ext:SetText(L("EXT   :> "..tostring(PLUGIN.targetedLandlineExt)))
 	self.ext:SetHeight(35)
 	self.ext:SetFont("CloseCaption_Bold")
@@ -103,19 +103,17 @@ function PANEL:Init()
 
 	self.dialSeqText = self:Add("DLabel")
 	self.dialSeqText:Dock(TOP)
-	self.dialSeqText:DockMargin(125, 4, 0, 0)
+	self.dialSeqText:DockMargin(75, 4, 0, 0)
 	self.dialSeqText:SetText(L("DIAL :> "))
 	self.dialSeqText:SetHeight(50)
 	self.dialSeqText:SetFont("CloseCaption_Bold")
 	self.dialSeqText:SetColor(Color(15, 13, 44, 220))
 	self.dialSeqText:SetContentAlignment(7)
 
-	self.close = self:Add("DButton")
-	self.close:Dock(BOTTOM)
-	self.close:DockMargin(0, 4, 0, 0)
-	self.close:SetText(L("close"))
-	self.close:SetHeight(50)
-	self.close.DoClick = function()
+	local close = vgui.Create("DButton")
+	close:SetText(L("close"))
+	close:SetSize(70, 70)
+	close.DoClick = function()
 		dialSeq:playDTMFTone("#")
 		self:Close()
 
@@ -129,13 +127,11 @@ function PANEL:Init()
 		net.SendToServer()
 	end
 
-	self.dial = self:Add("DButton")
-	self.dial:Dock(BOTTOM)
-	self.dial:DockMargin(0, 4, 0, 0)
-	self.dial:SetText(L("Dial"))
-	self.dial:SetColor(Color(0, 255, 0))
-	self.dial:SetHeight(50)
-	self.dial.DoClick = function()
+	local dial = vgui.Create("DButton")
+	dial:SetText(L("Dial"))
+	dial:SetColor(Color(0, 255, 0))
+	dial:SetSize(70, 70)
+	dial.DoClick = function()
 		net.Start("BeginDialToPeer")
 			net.WriteString(dialSeq:asStr())
 			net.WriteInt(PLUGIN.targetedLandlinePBX, 5)
@@ -148,28 +144,36 @@ function PANEL:Init()
 		PLUGIN.currentCallStatus = "RINGING"
 	end
 
-	self.reset = self:Add("DButton")
-	self.reset:Dock(BOTTOM)
-	self.reset:DockMargin(0, 4, 0, 0)
-	self.reset:SetText(L("Reset"))
-	self.reset:SetColor(Color(255, 0, 0))
-	self.reset:SetHeight(50)
-	self.reset.DoClick = function()
+	local reset = vgui.Create("DButton")
+	reset:SetText(L("Reset"))
+	reset:SetColor(Color(255, 0, 0))
+	reset:SetSize(70, 70)
+	reset.DoClick = function()
 		dialSeq:reset()
 		dialSeq:playDTMFTone("0")
 		self.dialSeqText:SetText(L("DIAL :> "))
 	end
 
+	self.optsGrid = self:Add("DGrid")
+	self.optsGrid:SetPos(350, 400)
+	self.optsGrid:SetCols(1)
+	self.optsGrid:SetColWide(80)
+	self.optsGrid:SetRowHeight(80)
+	
+	self.optsGrid:AddItem(reset)
+	self.optsGrid:AddItem(dial)
+	self.optsGrid:AddItem(close)
+
 	self.numberGrid = self:Add("DGrid")
-	self.numberGrid:SetPos(110, 400)
+	self.numberGrid:SetPos(100, 400)
 	self.numberGrid:SetCols(3)
-	self.numberGrid:SetColWide(130)
-	self.numberGrid:SetRowHeight(130)
+	self.numberGrid:SetColWide(80)
+	self.numberGrid:SetRowHeight(80)
  
 	for _, key in ipairs(buttonMap) do
 		local button = vgui.Create("DButton")
 		button:SetText(key)
-		button:SetSize(130, 130)
+		button:SetSize(70, 70)
 		button:SetFont("DermaLarge")
 
 		button.DoClick = function()
@@ -182,7 +186,7 @@ function PANEL:Init()
 	end
 	
 	self:MakePopup()
-
+	self:SetKeyboardInputEnabled(false)
 	PLUGIN.panel = self
 end
 
@@ -195,10 +199,10 @@ function PANEL:Paint(w, h)
 	-- background
 	draw.RoundedBox(6, 0, 0, w, h, Color(35, 35, 45))
 	-- "screen"
-	draw.RoundedBox(6, 110, 10, 390, 350, Color(215, 240, 231))
+	draw.RoundedBox(6, 60, 10, 390, 350, Color(215, 240, 231))
 	-- outline
 	surface.SetDrawColor(15, 13, 44, 255)
-	surface.DrawOutlinedRect(115, 20, 380, 320, 4)
+	surface.DrawOutlinedRect(65, 20, 380, 320, 4)
 
 	-- boxes:
 	local drawOutlineBoxPair = function (x, y, w, h, thick, darker, black)
@@ -214,39 +218,38 @@ function PANEL:Paint(w, h)
 		surface.DrawOutlinedRect(x, y, w, h, thick)
 	end
 	-- top box
-	drawOutlineBoxPair(117, 20, 376, 55, 3, false, true)
+	drawOutlineBoxPair(65, 20, 376, 55, 3, false, true)
 	-- name
-	drawOutlineBoxPair(117, 75, 376, 38, 2)
+	drawOutlineBoxPair(67, 75, 376, 38, 2)
 	-- exchange
-	drawOutlineBoxPair(117, 113, 376, 38, 2, true)
+	drawOutlineBoxPair(67, 113, 376, 38, 2, true)
 	-- ext
-	drawOutlineBoxPair(117, 151, 376, 38, 2)
+	drawOutlineBoxPair(67, 151, 376, 38, 2)
 	-- dial
-	drawOutlineBoxPair(117, 189, 376, 38, 2, true)
+	drawOutlineBoxPair(67, 189, 376, 38, 2, true)
 	-- status
-	drawOutlineBoxPair(117, 285, 376, 55, 3, false, true)
+	drawOutlineBoxPair(65, 285, 376, 55, 3, false, true)
 	-- status text
 	surface.SetFont("CloseCaption_Normal")
 	surface.SetTextColor(215, 240, 231, 255)
-	surface.SetTextPos(124, 290) 
+	surface.SetTextPos(75, 290) 
 	surface.DrawText("STATUS :> ")
 	surface.SetFont("CloseCaption_Bold")
 	surface.DrawText(tostring(PLUGIN.currentCallStatus))
 	surface.SetTextPos(151, 313) 
 	if (PLUGIN.otherSideActive == true) then
 		surface.SetFont("CloseCaption_Normal")
-		surface.DrawText("CONNECTED :> ")
-		surface.DrawText(tostring(PLUGIN.currentCallPeerName))
+		surface.DrawText("CONNECTED :> "..tostring(PLUGIN.currentCallPeerName))
 		surface.SetFont("CloseCaption_Bold")
 	end
 
 	-- time text
 	surface.SetTextColor(215, 240, 231, 255)
-	surface.SetTextPos(124, 25)
+	surface.SetTextPos(70, 25)
 	local ostime = os.time()
 	surface.SetFont("DermaDefaultBold")
 	surface.DrawText(os.date("%H:%M:%S", ostime))
-	surface.SetTextPos(124, 40)
+	surface.SetTextPos(70, 40)
 	surface.DrawText(os.date("%d/%m/%Y", ostime))
 end
 
