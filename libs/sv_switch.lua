@@ -57,24 +57,58 @@ function ix.phone.switch:Dial(sourceExchange, sourceExt, sourceCallback, dialSeq
     self:buildNewConnectionNode(connID, sourceExchange, sourceExt)
     self:buildNewConnectionNode(connID, decodedDest["exchange"], decodedDest["extension"])
 
-    -- 'dial' the endpoint entity
     local destination = self:GetDest(decodedDest["exchange"], decodedDest["extension"])
 
     if (!istable(destination)) then
         self:Disconnect(connID) -- destination dissapeared for some reason
         return
     end
-    local destEndID = destination["endID"]
+    local destEnt = self.endpoints:GetEndpoint(tonumber(destination["endID"]))
 
-    local _callback = (function(status)
+    local source = self:GetDest(sourceExchange, sourceExt)
+
+    if (!istable(source)) then
+        self:Disconnect(connID) -- source dissapeared for some reason
+        return
+    end
+    local sourceEnt = self.endpoints:GetEndpoint(tonumber(source["endID"]))
+
+    local _destCallback = (function(status)
         if (!status) then -- call did not go through so we need to clean up
             self:Disconnect(connID)
+            destEnt:HangUp()
+            sourceEnt:HangUp()
         end
 
+        if (status) then
+            sourceEnt:pickupDuringRing()
+        end
+        
+        net.Start("ixConnectedCallStatusChange")
+            net.WriteBool(status)
+        net.Send(destEnt.inUseBy)
         pcall(self.ringCallback, status) -- send the status back to the source
     end)
 
-    self.endpoints:GetEndpoint(tonumber(destEndID)):EnterRing(_callback)
+    destEnt:EnterRing(_destCallback) -- set the target as ringing
+    
+    local _sourceCallback = (function(status)
+        if (!status) then -- call did not go through so we need to clean up
+            self:Disconnect(connID)
+            destEnt:HangUp()
+            sourceEnt:HangUp()
+        end
+
+        if (status) then
+            sourceEnt:pickupDuringRing()
+        end
+
+        net.Start("ixConnectedCallStatusChange")
+            net.WriteBool(status)
+        net.Send(sourceEnt.inUseBy)
+    end)
+
+    sourceEnt:EnterRing(_sourceCallback) -- set source as ringing
 end
 
 -- returns back a list of player entities that are listening to the phone this character is speaking into
@@ -83,7 +117,7 @@ function ix.phone.switch:GetCharacterActiveListeners(character)
         return
     end
 
-    local connMD = character.GetLandlineConnection()
+    local connMD = character:GetLandlineConnection()
     if (!connMD) then
         return
     end
@@ -125,7 +159,11 @@ function ix.phone.switch:DisconnectActiveCallIfPresentOnClient(client)
         -- the target entity being in use.
         -- This is an edge case and might happen if the connections table is reloaded or if something
         -- weird happens with the character's vars.
-        character:SetLandlineConnection("landlineConnection", false)
+        character:SetLandlineConnection({
+            active = false,
+            exchange = nil,
+            extension = nil
+        })
         return
     end
     
@@ -137,7 +175,11 @@ function ix.phone.switch:DisconnectActiveCallIfPresentOnClient(client)
     for _, recv in ipairs(recievers) do
         local _char = recv:GetCharacter()
         if (IsValid(_char)) then
-            _char:SetLandlineConnection("landlineConnection", false)
+            _char:SetLandlineConnection({
+                active = false,
+                exchange = nil,
+                extension = nil
+            })
         end
     end
 
@@ -150,6 +192,7 @@ function ix.phone.switch:ListenerCanHearSpeaker(speaker, listener)
     local listeners = self:GetCharacterActiveListeners(speakerChar)
     if (!IsValid(listeners)) then
         -- doubly make sure that the call activity is set correctly on the caller
+        speaker:NotifyLocalized("You are not currently on a phone call!")
         speakerChar:SetLandlineConnection({
             active = false,
             exchange = nil,
