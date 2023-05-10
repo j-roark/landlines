@@ -69,13 +69,12 @@ function PLUGIN:runHangupOnClient(client)
         data.filter = client
     local target = util.TraceLine(data).Entity
 
-    if (!IsValid(target) or target.PrintName != "Landline Phone") then
+    if (!target or target.PrintName != "Landline Phone") then
         return
     end
 
-    local markForCleanup = target:InUse()
     target:HangUp()
-    if (markForCleanup) then
+    if (target:InUse() or target:IsRinging()) then
         client:GetCharacter():SetLandlineConnection({
             active = false,
             exchange = target.currentPBX,
@@ -84,6 +83,7 @@ function PLUGIN:runHangupOnClient(client)
         ix.phone.switch:DisconnectActiveCallIfPresentOnClient(client)
     end
 end
+
 -- PHONE CLEANUP
 -- this function literally just dumps all current ongoing connections that happen to have this client in them
 local function cleanupActivePhoneConnectionsForClient(client)
@@ -92,15 +92,22 @@ local function cleanupActivePhoneConnectionsForClient(client)
     end
 
     local char = client:GetCharacter()
-    if (client:GetCharacter():GetLandlineConnection()["active"]) then
+    local charCallMD = nil
+    -- why do I have to do all this checking?? UGH thanks helix
+    if (char and char.GetLandlineConnection) then
+        charCallMD = char:GetLandlineConnection()
+    end
+    if (istable(charCallMD) and charCallMD["active"]) then
         ix.phone.switch:DisconnectActiveCallIfPresentOnClient(client)
     end
 
-    char:SetLandlineConnection({
-        active = false,
-        exchange = nil,
-        extension = nil
-    })
+    if (char) then
+        char:SetLandlineConnection({
+            active = false,
+            exchange = nil,
+            extension = nil
+        })
+    end
 end
 
 -- peak laziness:
