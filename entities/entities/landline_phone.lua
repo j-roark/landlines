@@ -84,7 +84,9 @@ if SERVER then
         if (self.isRinging) then
             self.inUseBy = activator
             self:pickupDuringRing()
-        elseif (!self.offHook) then
+        end
+        
+        if (!self.offHook or self.isRinging) then
             self.inUseBy = activator
             net.Start("EnterLandlineDial")
                 net.WriteInt(tonumber(self.endpointID), 15)
@@ -109,6 +111,7 @@ if SERVER then
     end
 
     function ENT:EnterRing(callback)
+        -- this entity getting 'called'
         self:EmitSound("landline_ringtone.wav", 60, 100, 1, CHAN_STATIC)
         self.isRinging = true
         self.ringCallback = callback
@@ -128,12 +131,13 @@ if SERVER then
 
     function ENT:pickupDuringRing()
         self:SetModel("models/props/cs_office/phone_p1.mdl")
-
-        if (!self.isRinging or !timer.Exists("PhoneRinging"..self.endpointID)) then
+        timer.Remove("PhoneRinging"..self.endpointID)
+        
+        if (!self.isRinging) then
             return nil
         end
 
-        timer.Remove("PhoneRinging"..self.endpointID)
+        
         self:StopSound("landline_ringtone.wav")
         self:EmitSound("landline_hangup.wav", 60, 100, 1, CHAN_STATIC)
 
@@ -177,7 +181,6 @@ if SERVER then
 
         if (self.offHook) then
             self:EmitSound("landline_hangup.wav", 60, 100, 1, CHAN_STATIC)
-            
             self.inUseBy:GetCharacter():SetLandlineConnection({
                 active = false,
                 exchange = nil,
@@ -199,6 +202,12 @@ if SERVER then
 
     function ENT:IsRinging()
         return self.isRinging
+    end
+
+    function ENT:updateCurrentCallName(name)
+        net.Send("OnGetPeerName")
+            net.WriteString(name)
+        net.Send(self.inUseBy)
     end
 
     function ENT:broadcastStatusOnChange()
